@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MIT
-
 pragma solidity ^0.8.0;
 
 import "./Pledge.sol";
@@ -16,8 +15,8 @@ contract Fundraiser {
         accAmt = 0;
         empties = new uint[](0);
         endBlock = block.number + duration;
-        escrow = new Escrow(payable(msg.sender), block.number + duration);
-        owner = payable(msg.sender);
+        escrow = new Escrow(msg.sender, block.number + duration);
+        owner = msg.sender;
     }
 
     // -----------------
@@ -48,6 +47,11 @@ contract Fundraiser {
         _;
     }
 
+    modifier bailFee {
+        require(msg.value > 1_000_000_000, "gotta pay to bail");
+        _;
+    }
+
     // -----------------
     // --- functions ---
     // -----------------
@@ -57,12 +61,13 @@ contract Fundraiser {
     }
 
     // sender pledges amount
-    function pledge(uint amount) public payable {
+    function pledge() public payable {
 
-        // transfer amount to escrow or fail with message
-        address payable e = escrow.addr();
-        (bool success, ) = e.call{value: amount}("");
-        require(success, "fundraiser pledge failed");
+        uint amount = msg.value;
+        require(amount > 1_000_000_000, "need a lil something");
+
+        // transfer funds to escrow
+        escrow.pledge(msg.sender, amount);
 
         accAmt += amount;
         PledgeMap.Pledge memory p = PledgeMap.Pledge({addr: msg.sender, amount: amount});
@@ -78,37 +83,40 @@ contract Fundraiser {
     }
 
     // sender revokes their most recent pledge
-    function revokePledge() external payable {
+    function revokePledge() external payable bailFee {
         uint amount;
         bool found = false;
-        while (!found) {
-            for (uint i = pledgeMap.length; i > 0 ; i--) {
-                uint _i = i - 1;
-                // delete last pledge from sender
-                if (pledgeMap[_i].addr == msg.sender) {
-                    found = true;
-                    amount = pledgeMap[_i].amount;
-                    pledgeMap[_i] = PledgeMap._default();
-                    empties.push(_i);
-                }
+        for (uint i = pledgeMap.length; i > 0 ; i--) {
+            uint _i = i - 1;
+            // delete last pledge from sender
+            if (pledgeMap[_i].addr == msg.sender) {
+                found = true;
+                amount = pledgeMap[_i].amount;
+                pledgeMap[_i] = PledgeMap._default();
+                empties.push(_i);
             }
+            if (found) { break; }
         }
-        escrow.revoke(payable(msg.sender), amount);
+        if (amount > 0) {
+            escrow.revoke(payable(msg.sender), amount);
+        }
     }
 
     // check caller is owner and expiration
     // caller attempts to extract funds from the escrow contract
-    function extractFunds() external payable afterExpiry checkOwner {
+    function extractFunds() external afterExpiry checkOwner {
         escrow.extractFunds(payable(msg.sender));
+        (bool success, ) = payable(msg.sender).call{value: address(this).balance}("");
+        require(success, "extract funds failed");
     }
+
+    // --------------------------
+    // --- receive & fallback ---
+    // --------------------------
 
     // no call data
-    receive() external payable {
-        pledge(msg.value);
-    }
+    receive() external payable { pledge(); }
 
     // call data
-    fallback() external payable {
-        pledge(msg.value);
-    }
+    fallback() external payable { pledge(); }
 }

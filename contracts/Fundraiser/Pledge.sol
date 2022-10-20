@@ -1,10 +1,11 @@
-// SPDX-License-Identifier: GPL-3.0
-
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
 library PledgeMap {
 
-    // TODO aggregate multiple pledges from the same address?
+    // TODO
+    // aggregate multiple pledges from the same address
+    // revoke any amount <= total pledged
 
     // Pledge struct
     struct Pledge {
